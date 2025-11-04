@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import { prisma } from "./utils/prisma";
 import router from "./routes/authRoutes";
 import userRoutes from "./routes/userRoutes";
+import availabilityRoutes from "./routes/availabilityRoutes";
 
 dotenv.config();
 
@@ -16,6 +17,7 @@ app.use(express.json());
 // Routes
 app.use("/api/auth", router);
 app.use("/api/users", userRoutes);
+app.use("/api/availability", availabilityRoutes);
 
 // Health check with database
 app.get("/api/health", async (req, res) => {
