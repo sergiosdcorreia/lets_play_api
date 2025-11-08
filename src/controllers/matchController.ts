@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { prisma } from "../utils/prisma";
 import { matchSchema, rsvpSchema } from "../utils/validation";
+import { getWeatherForecast, getWeatherAdvice } from "../utils/weather";
 
 // Get all matches
 export async function getAllMatches(req: Request, res: Response) {
@@ -84,7 +85,30 @@ export async function getMatch(req: Request, res: Response) {
       return res.status(404).json({ error: "Match not found" });
     }
 
-    res.json({ match });
+    let weatherData = null;
+    if (match.venue.latitude && match.venue.longitude) {
+      const weatherResult = await getWeatherForecast(
+        match.venue.latitude,
+        match.venue.longitude,
+        match.date
+      );
+
+      if (weatherResult.success && weatherResult.weather) {
+        weatherData = {
+          ...weatherResult.weather,
+          advice: getWeatherAdvice(weatherResult.weather),
+        };
+      } else if (weatherResult.error) {
+        weatherData = {
+          error: weatherResult.error,
+        };
+      }
+    }
+
+    res.json({
+      match,
+      weather: weatherData,
+    });
   } catch (error) {
     console.error("Get match error:", error);
     res.status(500).json({ error: "Failed to get match" });

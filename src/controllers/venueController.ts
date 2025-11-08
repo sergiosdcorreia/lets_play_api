@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { prisma } from "../utils/prisma";
 import { venueSchema } from "../utils/validation";
+import { getWeatherForecast, getWeatherAdvice } from "../utils/weather";
 
 // Get all venues
 export async function getAllVenues(req: Request, res: Response) {
@@ -169,5 +170,69 @@ export async function deleteVenue(req: Request, res: Response) {
   } catch (error) {
     console.error("Delete venue error:", error);
     res.status(500).json({ error: "Failed to delete venue" });
+  }
+}
+
+export async function getVenueWeather(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    const { date } = req.query;
+
+    if (!date) {
+      return res
+        .status(400)
+        .json({ error: "Date query parameter is required (ISO format)" });
+    }
+
+    const venue = await prisma.venue.findUnique({
+      where: { id },
+    });
+
+    if (!venue) {
+      return res.status(404).json({ error: "Venue not found" });
+    }
+
+    if (!venue.latitude || !venue.longitude) {
+      return res.status(400).json({
+        error: "Venue does not have coordinates configured",
+      });
+    }
+
+    const matchDate = new Date(date as string);
+    if (isNaN(matchDate.getTime())) {
+      return res
+        .status(400)
+        .json({ error: "Invalid date format. Use ISO 8601" });
+    }
+
+    const weatherResult = await getWeatherForecast(
+      venue.latitude,
+      venue.longitude,
+      matchDate
+    );
+
+    if (!weatherResult.success) {
+      return res.status(400).json({
+        error: weatherResult.error,
+      });
+    }
+
+    const weatherWithAdvice = {
+      ...weatherResult.weather,
+      advice: getWeatherAdvice(weatherResult.weather!),
+    };
+
+    res.json({
+      venue: {
+        id: venue.id,
+        name: venue.name,
+        city: venue.city,
+      },
+      date: matchDate,
+      weather: weatherWithAdvice,
+    });
+  } catch (error) {
+    console.error("Get venue weather error:", error);
+    res.status(500).json({ error: "Failed to get weather forecast" });
   }
 }

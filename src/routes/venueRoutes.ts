@@ -5,6 +5,7 @@ import {
   createVenue,
   updateVenue,
   deleteVenue,
+  getVenueWeather,
 } from "../controllers/venueController";
 import { authenticateToken } from "../middleware/authMiddleware";
 
@@ -13,6 +14,7 @@ const venueRoutes = Router();
 // Public routes
 venueRoutes.get("/", getAllVenues);
 venueRoutes.get("/:id", getVenue);
+venueRoutes.get("/:id/weather", getVenueWeather);
 
 // Protected routes
 venueRoutes.post("/", authenticateToken, createVenue);
