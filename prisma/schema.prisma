@@ -12,10 +12,11 @@ model User {
   email         String         @unique
   password      String
   name          String
-  position      String?        // "Goalkeeper", "Defender", "Midfielder", "Forward"
-  skillLevel    Int            @default(5) // 1-10 rating
+  position      String?
+  skillLevel    Int            @default(5)
   availability  Availability[]
   matchPlayers  MatchPlayer[]
+  matchEvents   MatchEvent[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 }
@@ -41,9 +42,9 @@ model Venue {
   address      String
   city         String
   surface      String   // "Indoor Turf", "Outdoor Grass", etc.
-  capacity     Int      // Max players
+  capacity     Int
   pricePerHour Float?
-  latitude     Float?   // For weather API later
+  latitude     Float?
   longitude    Float?
   matches      Match[]
   createdAt    DateTime @default(now())
@@ -52,14 +53,15 @@ model Venue {
 
 model Match {
   id          String        @id @default(cuid())
-  date        DateTime      // Date and time of match
-  duration    Int           @default(90) // Duration in minutes
+  date        DateTime
+  duration    Int           @default(90)
   venueId     String
   venue       Venue         @relation(fields: [venueId], references: [id])
-  status      String        @default("scheduled") // "scheduled", "completed", "cancelled"
-  notes       String?       // Optional notes about the match
+  status      String        @default("scheduled")
+  notes       String?
   players     MatchPlayer[]
-  createdById String        // Who created the match
+  events      MatchEvent[]
+  createdById String
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
@@ -81,4 +83,20 @@ model MatchPlayer {
   @@unique([matchId, userId]) // User can't be added to same match twice
   @@index([matchId])
   @@index([userId])
+}
+
+model MatchEvent {
+  id        String   @id @default(cuid())
+  matchId   String
+  match     Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  playerId  String
+  player    User     @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  eventType String   // "goal", "assist", "yellow_card", "red_card"
+  minute    Int?     // Minute of the match when event occurred
+  notes     String?  // Optional notes (e.g., "penalty", "free kick")
+  createdAt DateTime @default(now())
+
+  @@index([matchId])
+  @@index([playerId])
+  @@index([eventType])
 }

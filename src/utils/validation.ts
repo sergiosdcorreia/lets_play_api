@@ -58,6 +58,17 @@ export const matchSchema = z.object({
   notes: z.string().optional(),
 });
 
+export const matchUpdateSchema = z.object({
+  date: z
+    .string()
+    .datetime("Invalid date format. Use ISO 8601 format")
+    .optional(),
+  duration: z.number().min(30).max(180).optional(),
+  venueId: z.string().optional(),
+  notes: z.string().optional(),
+  status: z.enum(["scheduled", "completed", "cancelled"]).optional(),
+});
+
 // RSVP validation
 export const rsvpSchema = z.object({
   status: z
@@ -67,6 +78,21 @@ export const rsvpSchema = z.object({
     }),
 });
 
+// Match Event validation
+export const matchEventSchema = z.object({
+  playerId: z.string().min(1, "Player ID is required"),
+  eventType: z
+    .string()
+    .refine(
+      (val) => ["goal", "assist", "yellow_card", "red_card"].includes(val),
+      { message: "Event type must be goal, assist, yellow_card, or red_card" }
+    ),
+  minute: z.number().min(0).max(180).optional(),
+  notes: z.string().optional(),
+});
+
+export type MatchEventInput = z.infer<typeof matchEventSchema>;
+export type MatchUpdateInput = z.infer<typeof matchUpdateSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type AvailabilityInput = z.infer<typeof availabilitySchema>;

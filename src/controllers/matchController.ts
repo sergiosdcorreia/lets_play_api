@@ -1,6 +1,10 @@
 import { Request, Response } from "express";
 import { prisma } from "../utils/prisma";
-import { matchSchema, rsvpSchema } from "../utils/validation";
+import {
+  matchSchema,
+  matchUpdateSchema,
+  rsvpSchema,
+} from "../utils/validation";
 import { getWeatherForecast, getWeatherAdvice } from "../utils/weather";
 
 // Get all matches
@@ -430,11 +434,11 @@ export async function updateMatch(req: Request, res: Response) {
       });
     }
 
-    // Validate input
-    const validatedData = matchSchema.partial().parse(req.body);
+    // Validate input with the update schema
+    const validatedData = matchUpdateSchema.parse(req.body);
 
-    // If updating date, ensure it's in the future
-    if (validatedData.date) {
+    // If updating date, ensure it's in the future (unless completing the match)
+    if (validatedData.date && validatedData.status !== "completed") {
       const newDate = new Date(validatedData.date);
       if (newDate < new Date()) {
         return res
@@ -443,12 +447,16 @@ export async function updateMatch(req: Request, res: Response) {
       }
     }
 
+    // Prepare update data
+    const updateData: any = { ...validatedData };
+    if (validatedData.date) {
+      updateData.date = new Date(validatedData.date);
+    }
+
     // Update match
     const updated = await prisma.match.update({
       where: { id },
-      data: validatedData.date
-        ? { ...validatedData, date: new Date(validatedData.date) }
-        : validatedData,
+      data: updateData,
       include: {
         venue: true,
         players: {
