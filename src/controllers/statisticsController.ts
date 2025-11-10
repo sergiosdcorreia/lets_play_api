@@ -254,24 +254,18 @@ export async function getPlayerStatistics(req: Request, res: Response) {
 // Get leaderboard
 export async function getLeaderboard(req: Request, res: Response) {
   try {
-    const { type = "goals", limit = 10 } = req.query;
+    const { type = "goal", limit = 10 } = req.query; // ← Change 'goals' to 'goal'
 
     // Validate type
-    const validTypes = ["goals", "assists"];
+    const validTypes = ["goal", "assist"]; // ← Change to singular
     if (!validTypes.includes(type as string)) {
       return res.status(400).json({
-        error: 'Invalid type. Must be "goals" or "assists"',
+        error: 'Invalid type. Must be "goal" or "assist"',
       });
     }
 
-    // Get all events of specified type
-    const events = await prisma.matchEvent.findMany({
-      where: {
-        eventType: type as string,
-        match: {
-          status: "completed",
-        },
-      },
+    // Get ALL events (no filter)
+    const allEvents = await prisma.matchEvent.findMany({
       include: {
         player: {
           select: {
@@ -281,13 +275,26 @@ export async function getLeaderboard(req: Request, res: Response) {
             skillLevel: true,
           },
         },
+        match: {
+          select: {
+            status: true,
+          },
+        },
       },
     });
+
+    // Filter by type
+    const events = allEvents.filter((e: any) => e.eventType === type);
+
+    // Filter for completed matches only
+    const completedEvents = events.filter(
+      (e: any) => e.match.status === "completed"
+    );
 
     // Group by player and count
     const playerCounts: Record<string, any> = {};
 
-    events.forEach((event: any) => {
+    completedEvents.forEach((event: any) => {
       if (!playerCounts[event.playerId]) {
         playerCounts[event.playerId] = {
           player: event.player,
