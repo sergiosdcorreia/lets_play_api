@@ -20,6 +20,7 @@ model User {
   teamsManaged     Team[]         @relation("TeamManager")
   teamsSubManaged  Team[]         @relation("TeamSubManager")
   teamMemberships  TeamMember[]
+  tournaments      Tournament[]
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 }
@@ -55,21 +56,31 @@ model Venue {
 }
 
 model Match {
-  id          String        @id @default(cuid())
-  date        DateTime
-  duration    Int           @default(90)
-  venueId     String
-  status      String        @default("scheduled")
-  notes       String?
-  createdById String
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  venue       Venue         @relation(fields: [venueId], references: [id])
-  events      MatchEvent[]
-  players     MatchPlayer[]
+  id           String        @id @default(cuid())
+  date         DateTime
+  duration     Int           @default(90)
+  venueId      String
+  venue        Venue         @relation(fields: [venueId], references: [id])
+  status       String        @default("scheduled")
+  notes        String?
+  players      MatchPlayer[]
+  events       MatchEvent[]
+  createdById  String
+  tournamentId String?                                                    // ← ADD THIS
+  tournament   Tournament?   @relation(fields: [tournamentId], references: [id])  // ← ADD THIS
+  
+  // Tournament match specific fields
+  homeTeamId   String?                                                    // ← ADD THIS
+  awayTeamId   String?                                                    // ← ADD THIS
+  homeScore    Int?                                                       // ← ADD THIS
+  awayScore    Int?                                                       // ← ADD THIS
+  
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
   @@index([venueId])
   @@index([date])
+  @@index([tournamentId])                                                 // ← ADD THIS
 }
 
 model MatchPlayer {
@@ -105,19 +116,20 @@ model MatchEvent {
 }
 
 model Team {
-  id             String       @id @default(cuid())
-  name           String
-  logo           String?
-  primaryColor   String?
-  secondaryColor String?
-  description    String?
-  managerId      String
-  manager        User         @relation("TeamManager", fields: [managerId], references: [id])
-  subManagerId   String?
-  subManager     User?        @relation("TeamSubManager", fields: [subManagerId], references: [id])
-  members        TeamMember[]
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id                String           @id @default(cuid())
+  name              String
+  logo              String?
+  primaryColor      String?
+  secondaryColor    String?
+  description       String?
+  managerId         String
+  manager           User             @relation("TeamManager", fields: [managerId], references: [id])
+  subManagerId      String?
+  subManager        User?            @relation("TeamSubManager", fields: [subManagerId], references: [id])
+  members           TeamMember[]
+  tournamentTeams   TournamentTeam[]
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
   @@index([managerId])
   @@index([subManagerId])
@@ -139,5 +151,53 @@ model TeamMember {
   @@unique([teamId, userId])
   @@index([teamId])
   @@index([userId])
+  @@index([status])
+}
+
+model Tournament {
+  id                  String           @id @default(cuid())
+  name                String
+  description         String?
+  format              String           @default("league") // "league", "knockout", "custom"
+  startDate           DateTime
+  createdById         String
+  createdBy           User             @relation(fields: [createdById], references: [id])
+  autoGenerateMatches Boolean          @default(false)
+  status              String           @default("upcoming") // "upcoming", "in_progress", "completed", "cancelled"
+  teams               TournamentTeam[]
+  matches             Match[]
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  @@index([createdById])
+  @@index([status])
+  @@index([startDate])
+}
+
+model TournamentTeam {
+  id           String     @id @default(cuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  teamId       String
+  team         Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  status       String     @default("invited") // "invited", "confirmed", "declined"
+  
+  // Tournament statistics
+  matchesPlayed Int       @default(0)
+  wins          Int       @default(0)
+  draws         Int       @default(0)
+  losses        Int       @default(0)
+  goalsFor      Int       @default(0)
+  goalsAgainst  Int       @default(0)
+  goalDifference Int      @default(0)
+  points        Int       @default(0)
+  
+  joinedAt      DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([tournamentId, teamId]) // Team can't be in same tournament twice
+  @@index([tournamentId])
+  @@index([teamId])
   @@index([status])
 }

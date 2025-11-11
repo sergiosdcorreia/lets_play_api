@@ -137,6 +137,45 @@ export const teamMemberRsvpSchema = z.object({
   status: z.enum(["active", "declined"]),
 });
 
+// Tournament validation
+export const tournamentSchema = z.object({
+  name: z
+    .string()
+    .min(3, "Tournament name must be at least 3 characters")
+    .max(100),
+  description: z.string().max(1000).optional(),
+  format: z.enum(["league", "knockout", "custom"]).default("league"),
+  startDate: z.string().datetime("Invalid date format. Use ISO 8601"),
+  autoGenerateMatches: z.boolean().default(false),
+});
+
+// Tournament update validation
+export const tournamentUpdateSchema = z.object({
+  name: z.string().min(3).max(100).optional(),
+  description: z.string().max(1000).optional(),
+  format: z.enum(["league", "knockout", "custom"]).optional(),
+  startDate: z.string().datetime().optional(),
+  status: z
+    .enum(["upcoming", "in_progress", "completed", "cancelled"])
+    .optional(),
+});
+
+// Invite team to tournament
+export const inviteTournamentTeamSchema = z.object({
+  teamId: z.string().min(1, "Team ID is required"),
+});
+
+// Tournament team RSVP
+export const tournamentTeamRsvpSchema = z.object({
+  status: z.enum(["confirmed", "declined"]),
+});
+
+export type TournamentInput = z.infer<typeof tournamentSchema>;
+export type TournamentUpdateInput = z.infer<typeof tournamentUpdateSchema>;
+export type InviteTournamentTeamInput = z.infer<
+  typeof inviteTournamentTeamSchema
+>;
+export type TournamentTeamRsvpInput = z.infer<typeof tournamentTeamRsvpSchema>;
 export type TeamInput = z.infer<typeof teamSchema>;
 export type TeamUpdateInput = z.infer<typeof teamUpdateSchema>;
 export type InviteTeamMemberInput = z.infer<typeof inviteTeamMemberSchema>;

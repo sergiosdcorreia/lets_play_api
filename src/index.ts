@@ -9,6 +9,7 @@ import venueRoutes from "./routes/venueRoutes";
 import matchRoutes from "./routes/matchRoutes";
 import statisticsRoutes from "./routes/statisticsRoutes";
 import teamRoutes from "./routes/teamRoutes";
+import tournamentRoutes from "./routes/tournamentRoutes";
 
 dotenv.config();
 
@@ -26,6 +27,7 @@ app.use("/api/venues", venueRoutes);
 app.use("/api/matches", matchRoutes);
 app.use("/api/statistics", statisticsRoutes);
 app.use("/api/teams", teamRoutes);
+app.use("/api/tournaments", tournamentRoutes);
 
 // Health check with database
 app.get("/api/health", async (req, res) => {
