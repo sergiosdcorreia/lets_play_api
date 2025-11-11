@@ -91,6 +91,56 @@ export const matchEventSchema = z.object({
   notes: z.string().optional(),
 });
 
+// Team validation
+export const teamSchema = z.object({
+  name: z
+    .string()
+    .min(3, "Team name must be at least 3 characters")
+    .max(50, "Team name too long"),
+  logo: z.string().url("Invalid logo URL").optional(),
+  primaryColor: z
+    .string()
+    .regex(/^#[0-9A-F]{6}$/i, "Invalid hex color")
+    .optional(),
+  secondaryColor: z
+    .string()
+    .regex(/^#[0-9A-F]{6}$/i, "Invalid hex color")
+    .optional(),
+  description: z.string().max(500, "Description too long").optional(),
+  subManagerId: z.string().optional(),
+});
+
+// Team update validation
+export const teamUpdateSchema = z.object({
+  name: z.string().min(3).max(50).optional(),
+  logo: z.string().url().optional(),
+  primaryColor: z
+    .string()
+    .regex(/^#[0-9A-F]{6}$/i)
+    .optional(),
+  secondaryColor: z
+    .string()
+    .regex(/^#[0-9A-F]{6}$/i)
+    .optional(),
+  description: z.string().max(500).optional(),
+  subManagerId: z.string().nullable().optional(),
+});
+
+// Team member invitation
+export const inviteTeamMemberSchema = z.object({
+  userId: z.string().min(1, "User ID is required"),
+  role: z.enum(["player", "sub_manager"]).default("player"),
+});
+
+// Team member RSVP
+export const teamMemberRsvpSchema = z.object({
+  status: z.enum(["active", "declined"]),
+});
+
+export type TeamInput = z.infer<typeof teamSchema>;
+export type TeamUpdateInput = z.infer<typeof teamUpdateSchema>;
+export type InviteTeamMemberInput = z.infer<typeof inviteTeamMemberSchema>;
+export type TeamMemberRsvpInput = z.infer<typeof teamMemberRsvpSchema>;
 export type MatchEventInput = z.infer<typeof matchEventSchema>;
 export type MatchUpdateInput = z.infer<typeof matchUpdateSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;

@@ -8,31 +8,34 @@ datasource db {
 }
 
 model User {
-  id            String         @id @default(cuid())
-  email         String         @unique
-  password      String
-  name          String
-  position      String?
-  skillLevel    Int            @default(5)
-  availability  Availability[]
-  matchPlayers  MatchPlayer[]
-  matchEvents   MatchEvent[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id               String         @id @default(cuid())
+  email            String         @unique
+  password         String
+  name             String
+  position         String?
+  skillLevel       Int            @default(5)
+  availability     Availability[]
+  matchPlayers     MatchPlayer[]
+  matchEvents      MatchEvent[]
+  teamsManaged     Team[]         @relation("TeamManager")
+  teamsSubManaged  Team[]         @relation("TeamSubManager")
+  teamMemberships  TeamMember[]
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 }
 
 model Availability {
   id          String   @id @default(cuid())
   userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  dayOfWeek   Int      // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-  startTime   String   // "18:00"
-  endTime     String   // "20:00"
+  dayOfWeek   Int
+  startTime   String
+  endTime     String
   isAvailable Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, dayOfWeek, startTime]) // User can't have duplicate time slots
+  @@unique([userId, dayOfWeek, startTime])
   @@index([userId])
 }
 
@@ -41,14 +44,14 @@ model Venue {
   name         String
   address      String
   city         String
-  surface      String   // "Indoor Turf", "Outdoor Grass", etc.
+  surface      String
   capacity     Int
   pricePerHour Float?
   latitude     Float?
   longitude    Float?
-  matches      Match[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  matches      Match[]
 }
 
 model Match {
@@ -56,14 +59,14 @@ model Match {
   date        DateTime
   duration    Int           @default(90)
   venueId     String
-  venue       Venue         @relation(fields: [venueId], references: [id])
   status      String        @default("scheduled")
   notes       String?
-  players     MatchPlayer[]
-  events      MatchEvent[]
   createdById String
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
+  venue       Venue         @relation(fields: [venueId], references: [id])
+  events      MatchEvent[]
+  players     MatchPlayer[]
 
   @@index([venueId])
   @@index([date])
@@ -72,15 +75,15 @@ model Match {
 model MatchPlayer {
   id        String   @id @default(cuid())
   matchId   String
-  match     Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  status    String   @default("pending") // "pending", "confirmed", "declined"
-  team      String?  // "A" or "B" (assigned later)
+  status    String   @default("pending")
+  team      String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  match     Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([matchId, userId]) // User can't be added to same match twice
+  @@unique([matchId, userId])
   @@index([matchId])
   @@index([userId])
 }
@@ -88,15 +91,53 @@ model MatchPlayer {
 model MatchEvent {
   id        String   @id @default(cuid())
   matchId   String
-  match     Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
   playerId  String
-  player    User     @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  eventType String   // "goal", "assist", "yellow_card", "red_card"
-  minute    Int?     // Minute of the match when event occurred
-  notes     String?  // Optional notes (e.g., "penalty", "free kick")
+  eventType String
+  minute    Int?
+  notes     String?
   createdAt DateTime @default(now())
+  match     Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  player    User     @relation(fields: [playerId], references: [id], onDelete: Cascade)
 
   @@index([matchId])
   @@index([playerId])
   @@index([eventType])
+}
+
+model Team {
+  id             String       @id @default(cuid())
+  name           String
+  logo           String?
+  primaryColor   String?
+  secondaryColor String?
+  description    String?
+  managerId      String
+  manager        User         @relation("TeamManager", fields: [managerId], references: [id])
+  subManagerId   String?
+  subManager     User?        @relation("TeamSubManager", fields: [subManagerId], references: [id])
+  members        TeamMember[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([managerId])
+  @@index([subManagerId])
+}
+
+model TeamMember {
+  id        String    @id @default(cuid())
+  teamId    String
+  team      Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      String    @default("player")
+  status    String    @default("pending")
+  joinedAt  DateTime?
+  leftAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([teamId, userId])
+  @@index([teamId])
+  @@index([userId])
+  @@index([status])
 }

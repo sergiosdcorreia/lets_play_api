@@ -22,7 +22,7 @@
   },
   "homepage": "https://github.com/sergiosdcorreia/lets_play_api#readme",
   "dependencies": {
-    "@prisma/client": "^6.18.0",
+    "@prisma/client": "^6.19.0",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
