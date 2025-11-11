@@ -6,6 +6,11 @@ import {
   inviteTournamentTeamSchema,
   tournamentTeamRsvpSchema,
 } from "../utils/validation";
+import { matchSchema } from "../utils/validation";
+import {
+  updateTournamentStandings,
+  recalculateTournamentStandings,
+} from "../utils/tournamentStandings.js";
 
 // Get all tournaments
 export async function getAllTournaments(req: Request, res: Response) {
@@ -571,5 +576,378 @@ export async function removeTeam(req: Request, res: Response) {
   } catch (error) {
     console.error("Remove team error:", error);
     res.status(500).json({ error: "Failed to remove team" });
+  }
+}
+
+// Create tournament match
+export async function createTournamentMatch(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const { id } = req.params; // tournament ID
+
+    // Validate input
+    const validatedData = matchSchema.parse(req.body);
+
+    // Check tournament exists and user is creator
+    const tournament = await prisma.tournament.findUnique({
+      where: { id },
+      include: {
+        teams: {
+          where: { status: "confirmed" },
+        },
+      },
+    });
+
+    if (!tournament) {
+      return res.status(404).json({ error: "Tournament not found" });
+    }
+
+    if (tournament.createdById !== req.user.id) {
+      return res.status(403).json({
+        error: "Only the tournament creator can create matches",
+      });
+    }
+
+    // Validate home and away teams are required for tournament matches
+    if (!validatedData.homeTeamId || !validatedData.awayTeamId) {
+      return res.status(400).json({
+        error: "Home team and away team are required for tournament matches",
+      });
+    }
+
+    if (validatedData.homeTeamId === validatedData.awayTeamId) {
+      return res.status(400).json({
+        error: "Home team and away team must be different",
+      });
+    }
+
+    // Check both teams are in the tournament
+    const homeTeam = tournament.teams.find(
+      (t: any) => t.teamId === validatedData.homeTeamId
+    );
+    const awayTeam = tournament.teams.find(
+      (t: any) => t.teamId === validatedData.awayTeamId
+    );
+
+    if (!homeTeam || !awayTeam) {
+      return res.status(400).json({
+        error: "Both teams must be confirmed participants in the tournament",
+      });
+    }
+
+    // Check venue exists
+    const venue = await prisma.venue.findUnique({
+      where: { id: validatedData.venueId },
+    });
+
+    if (!venue) {
+      return res.status(404).json({ error: "Venue not found" });
+    }
+
+    // Check match date
+    const matchDate = new Date(validatedData.date);
+    if (matchDate < new Date()) {
+      return res
+        .status(400)
+        .json({ error: "Match date must be in the future" });
+    }
+
+    // Create match
+    const match = await prisma.match.create({
+      data: {
+        date: matchDate,
+        duration: validatedData.duration,
+        venueId: validatedData.venueId,
+        notes: validatedData.notes,
+        tournamentId: id,
+        homeTeamId: validatedData.homeTeamId,
+        awayTeamId: validatedData.awayTeamId,
+        createdById: req.user.id,
+        status: "scheduled",
+      },
+      include: {
+        venue: {
+          select: {
+            id: true,
+            name: true,
+            city: true,
+          },
+        },
+      },
+    });
+
+    res.status(201).json({
+      message: "Tournament match created successfully",
+      match,
+    });
+  } catch (error) {
+    if (error instanceof Error && "issues" in error) {
+      return res.status(400).json({
+        error: "Validation failed",
+        details: error,
+      });
+    }
+
+    console.error("Create tournament match error:", error);
+    res.status(500).json({ error: "Failed to create tournament match" });
+  }
+}
+
+// Complete tournament match and update standings
+export async function completeTournamentMatch(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const { id, matchId } = req.params; // tournament ID, match ID
+    const { homeScore, awayScore } = req.body;
+
+    // Validate scores
+    if (typeof homeScore !== "number" || typeof awayScore !== "number") {
+      return res.status(400).json({
+        error: "Home score and away score must be numbers",
+      });
+    }
+
+    if (homeScore < 0 || awayScore < 0) {
+      return res.status(400).json({
+        error: "Scores cannot be negative",
+      });
+    }
+
+    // Check tournament exists
+    const tournament = await prisma.tournament.findUnique({
+      where: { id },
+    });
+
+    if (!tournament) {
+      return res.status(404).json({ error: "Tournament not found" });
+    }
+
+    if (tournament.createdById !== req.user.id) {
+      return res.status(403).json({
+        error: "Only the tournament creator can complete matches",
+      });
+    }
+
+    // Check match exists and is part of tournament
+    const match = await prisma.match.findUnique({
+      where: { id: matchId },
+    });
+
+    if (!match) {
+      return res.status(404).json({ error: "Match not found" });
+    }
+
+    if (match.tournamentId !== id) {
+      return res.status(400).json({
+        error: "Match is not part of this tournament",
+      });
+    }
+
+    if (match.status === "completed") {
+      return res.status(400).json({
+        error: "Match is already completed",
+      });
+    }
+
+    if (!match.homeTeamId || !match.awayTeamId) {
+      return res.status(400).json({
+        error: "Match does not have teams assigned",
+      });
+    }
+
+    // Update match with scores
+    const updatedMatch = await prisma.match.update({
+      where: { id: matchId },
+      data: {
+        homeScore,
+        awayScore,
+        status: "completed",
+      },
+      include: {
+        venue: {
+          select: {
+            name: true,
+          },
+        },
+      },
+    });
+
+    // Update tournament standings
+    await updateTournamentStandings({
+      matchId,
+      homeTeamId: match.homeTeamId,
+      awayTeamId: match.awayTeamId,
+      homeScore,
+      awayScore,
+    });
+
+    res.json({
+      message: "Match completed and standings updated successfully",
+      match: updatedMatch,
+    });
+  } catch (error) {
+    console.error("Complete tournament match error:", error);
+    res.status(500).json({ error: "Failed to complete match" });
+  }
+}
+
+// Auto-generate tournament fixtures
+export async function generateFixtures(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const { id } = req.params; // tournament ID
+    const { venueId, startDate, daysPerRound } = req.body;
+
+    // Validate inputs
+    if (!venueId || !startDate) {
+      return res.status(400).json({
+        error: "Venue ID and start date are required",
+      });
+    }
+
+    // Check tournament exists
+    const tournament = await prisma.tournament.findUnique({
+      where: { id },
+      include: {
+        teams: {
+          where: { status: "confirmed" },
+          include: {
+            team: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!tournament) {
+      return res.status(404).json({ error: "Tournament not found" });
+    }
+
+    if (tournament.createdById !== req.user.id) {
+      return res.status(403).json({
+        error: "Only the tournament creator can generate fixtures",
+      });
+    }
+
+    // Check venue exists
+    const venue = await prisma.venue.findUnique({
+      where: { id: venueId },
+    });
+
+    if (!venue) {
+      return res.status(404).json({ error: "Venue not found" });
+    }
+
+    // Get confirmed teams
+    const teams = tournament.teams.map((t: any) => t.team);
+
+    if (teams.length < 2) {
+      return res.status(400).json({
+        error: "At least 2 teams are required to generate fixtures",
+      });
+    }
+
+    // Generate round-robin fixtures
+    const fixtures: any[] = [];
+    const matchStartDate = new Date(startDate);
+    const daysBetweenRounds = daysPerRound || 7; // Default 1 week between rounds
+
+    // Round-robin algorithm
+    for (let i = 0; i < teams.length; i++) {
+      for (let j = i + 1; j < teams.length; j++) {
+        const homeTeam = teams[i];
+        const awayTeam = teams[j];
+
+        // Calculate match date
+        const matchDate = new Date(matchStartDate);
+        matchDate.setDate(
+          matchDate.getDate() + fixtures.length * daysBetweenRounds
+        );
+        matchDate.setHours(19, 0, 0, 0); // Default 7 PM
+
+        fixtures.push({
+          date: matchDate,
+          duration: 90,
+          venueId,
+          tournamentId: id,
+          homeTeamId: homeTeam.id,
+          awayTeamId: awayTeam.id,
+          createdById: req.user.id,
+          status: "scheduled",
+          notes: `${tournament.name} - ${homeTeam.name} vs ${awayTeam.name}`,
+        });
+      }
+    }
+
+    // Create all fixtures
+    const createdMatches = await prisma.match.createMany({
+      data: fixtures,
+    });
+
+    res.status(201).json({
+      message: `Successfully generated ${createdMatches.count} fixtures`,
+      fixturesCount: createdMatches.count,
+      info: {
+        totalMatches: fixtures.length,
+        teamsCount: teams.length,
+        startDate: matchStartDate,
+        estimatedEndDate: new Date(
+          matchStartDate.getTime() +
+            fixtures.length * daysBetweenRounds * 24 * 60 * 60 * 1000
+        ),
+      },
+    });
+  } catch (error) {
+    console.error("Generate fixtures error:", error);
+    res.status(500).json({ error: "Failed to generate fixtures" });
+  }
+}
+
+// Recalculate tournament standings
+export async function recalculateStandings(req: Request, res: Response) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const { id } = req.params; // tournament ID
+
+    // Check tournament exists
+    const tournament = await prisma.tournament.findUnique({
+      where: { id },
+    });
+
+    if (!tournament) {
+      return res.status(404).json({ error: "Tournament not found" });
+    }
+
+    if (tournament.createdById !== req.user.id) {
+      return res.status(403).json({
+        error: "Only the tournament creator can recalculate standings",
+      });
+    }
+
+    // Recalculate standings
+    await recalculateTournamentStandings(id);
+
+    res.json({
+      message: "Tournament standings recalculated successfully",
+    });
+  } catch (error) {
+    console.error("Recalculate standings error:", error);
+    res.status(500).json({ error: "Failed to recalculate standings" });
   }
 }

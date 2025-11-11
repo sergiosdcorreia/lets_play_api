@@ -56,6 +56,9 @@ export const matchSchema = z.object({
     .default(90),
   venueId: z.string().min(1, "Venue ID is required"),
   notes: z.string().optional(),
+  tournamentId: z.string().optional(),
+  homeTeamId: z.string().optional(),
+  awayTeamId: z.string().optional(),
 });
 
 export const matchUpdateSchema = z.object({
