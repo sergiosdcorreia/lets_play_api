@@ -4,10 +4,11 @@ import {
   getMatch,
   getMyMatches,
   createMatch,
-  invitePlayer,
-  rsvpToMatch,
   updateMatch,
-  cancelMatch,
+  deleteMatch,
+  rsvpToMatch,
+  leaveMatch,
+  invitePlayerToMatch,
 } from "../controllers/matchController";
 import { authenticateToken } from "../middleware/authMiddleware";
 
@@ -22,9 +23,10 @@ matchRoutes.use(authenticateToken);
 
 matchRoutes.get("/my/matches", getMyMatches);
 matchRoutes.post("/", createMatch);
-matchRoutes.post("/:id/invite", invitePlayer);
-matchRoutes.post("/:id/rsvp", rsvpToMatch);
 matchRoutes.put("/:id", updateMatch);
-matchRoutes.delete("/:id", cancelMatch);
+matchRoutes.delete("/:id", deleteMatch);
+matchRoutes.post("/:id/rsvp", rsvpToMatch);
+matchRoutes.post("/:id/leave", leaveMatch);
+matchRoutes.post("/:id/invite", invitePlayerToMatch);
 
 export default matchRoutes;

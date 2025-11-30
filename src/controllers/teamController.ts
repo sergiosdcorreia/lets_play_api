@@ -3,9 +3,10 @@ import { prisma } from "../utils/prisma";
 import {
   teamSchema,
   teamUpdateSchema,
-  inviteTeamMemberSchema,
   teamMemberRsvpSchema,
 } from "../utils/validation";
+import { sendInviteEmail } from "../services/emailService";
+import { v4 as uuidv4 } from "uuid";
 
 // Get all teams
 export async function getAllTeams(req: Request, res: Response) {
@@ -352,23 +353,38 @@ export async function deleteTeam(req: Request, res: Response) {
   }
 }
 
-// Invite player to team
+// ==================== INVITE PLAYER (COM EMAIL) ====================
 export async function invitePlayer(req: Request, res: Response) {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Not authenticated" });
     }
 
-    const { id } = req.params; // team ID
+    const { id: teamId } = req.params;
+    const { email, role } = req.body;
+    const userId = req.user.id;
 
-    // Validate input
-    const validatedData = inviteTeamMemberSchema.parse(req.body);
+    console.log("📧 Invite request:", { teamId, email, role, userId });
 
-    // Check team exists and user is manager
+    // 1. Validações básicas
+    if (!email || !role) {
+      return res.status(400).json({ error: "Email and role are required" });
+    }
+
+    if (!["member", "coordinator"].includes(role)) {
+      return res.status(400).json({ error: "Invalid role" });
+    }
+
+    // 2. Busca a equipa
     const team = await prisma.team.findUnique({
-      where: { id },
+      where: { id: teamId },
       include: {
-        members: true,
+        manager: true,
+        members: {
+          include: {
+            user: true,
+          },
+        },
       },
     });
 
@@ -376,93 +392,102 @@ export async function invitePlayer(req: Request, res: Response) {
       return res.status(404).json({ error: "Team not found" });
     }
 
-    if (team.managerId !== req.user.id && team.subManagerId !== req.user.id) {
+    console.log("✅ Team found:", team.name);
+
+    // 3. Verifica se o utilizador tem permissão (é manager ou sub-manager)
+    const isManager = team.managerId === userId;
+    const isSubManager = team.subManagerId === userId;
+    const isMemberCoordinator = team.members.some(
+      (m) => m.userId === userId && m.role === "coordinator"
+    );
+
+    if (!isManager && !isSubManager && !isMemberCoordinator) {
       return res.status(403).json({
-        error: "Only team managers can invite players",
+        error: "Only team managers can invite members",
       });
     }
 
-    // Check user exists
-    const userToInvite = await prisma.user.findUnique({
-      where: { id: validatedData.userId },
+    console.log("✅ User is manager/coordinator");
+
+    // 4. Verifica se o email já é membro
+    const existingMember = team.members.find((m) => m.user.email === email);
+    if (existingMember && existingMember.status === "active") {
+      return res.status(400).json({
+        error: "User is already a member of this team",
+      });
+    }
+
+    console.log("✅ Email not in team yet");
+
+    // 5. Verifica se já tem convite pendente
+    const existingInvite = await prisma.teamInvite.findFirst({
+      where: {
+        teamId,
+        email,
+        status: "pending",
+        expiresAt: { gt: new Date() },
+      },
     });
 
-    if (!userToInvite) {
-      return res.status(404).json({ error: "User not found" });
+    if (existingInvite) {
+      return res.status(400).json({
+        error: "An invitation is already pending for this email",
+      });
     }
 
-    // Check if user is already in team
-    const existingMember = team.members.find(
-      (m: any) => m.userId === validatedData.userId
-    );
-    if (existingMember) {
-      if (existingMember.status === "active") {
-        return res.status(400).json({ error: "User is already a team member" });
-      } else if (existingMember.status === "pending") {
-        return res
-          .status(400)
-          .json({ error: "User already has a pending invitation" });
-      } else if (existingMember.status === "left") {
-        // Reactivate member
-        const reactivated = await prisma.teamMember.update({
-          where: { id: existingMember.id },
-          data: {
-            status: "pending",
-            role: validatedData.role,
-            leftAt: null,
-          },
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-              },
-            },
-          },
-        });
+    console.log("✅ No pending invite");
 
-        return res.status(201).json({
-          message: "Player re-invited successfully",
-          member: reactivated,
-        });
-      }
-    }
+    // 6. Cria o convite na BD
+    const token = uuidv4();
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7); // Expira em 7 dias
 
-    // Create invitation
-    const member = await prisma.teamMember.create({
+    const invite = await prisma.teamInvite.create({
       data: {
-        teamId: id,
-        userId: validatedData.userId,
-        role: validatedData.role,
+        teamId,
+        email,
+        role,
+        token,
+        invitedBy: userId,
+        expiresAt,
         status: "pending",
       },
       include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            position: true,
-          },
-        },
+        inviter: true,
       },
     });
 
-    res.status(201).json({
-      message: "Player invited successfully",
-      member,
-    });
-  } catch (error) {
-    if (error instanceof Error && "issues" in error) {
-      return res.status(400).json({
-        error: "Validation failed",
-        details: error,
+    console.log("✅ Invite created in DB:", invite.id);
+
+    // 7. Envia o email via Resend
+    try {
+      await sendInviteEmail({
+        to: email,
+        teamName: team.name,
+        inviterName: invite.inviter?.name || "Someone",
+        role,
+        inviteToken: token,
+        expiresAt,
       });
+      console.log("✅ Email sent successfully");
+    } catch (emailError) {
+      console.error("❌ Failed to send email:", emailError);
+      // Mesmo se o email falhar, o convite existe na BD
     }
 
-    console.error("Invite player error:", error);
-    res.status(500).json({ error: "Failed to invite player" });
+    // 8. Retorna sucesso
+    res.status(201).json({
+      message: "Invitation sent successfully",
+      invite: {
+        id: invite.id,
+        email: invite.email,
+        role: invite.role,
+        expiresAt: invite.expiresAt,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error creating invite:", error);
+    res.status(500).json({ error: "Failed to create invitation" });
   }
 }
 
@@ -570,8 +595,6 @@ export async function leaveTeam(req: Request, res: Response) {
         leftAt: new Date(),
       },
     });
-
-    // TODO: Notify manager (add notification system later)
 
     res.json({ message: "Successfully left the team" });
   } catch (error) {

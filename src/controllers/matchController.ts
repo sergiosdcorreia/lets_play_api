@@ -1,14 +1,8 @@
 import { Request, Response } from "express";
 import { prisma } from "../utils/prisma";
-import {
-  matchSchema,
-  matchUpdateSchema,
-  rsvpSchema,
-} from "../utils/validation";
-import { getWeatherForecast, getWeatherAdvice } from "../utils/weather";
 
-// Get all matches
-export async function getAllMatches(req: Request, res: Response) {
+// ==================== GET ALL MATCHES ====================
+export const getAllMatches = async (req: Request, res: Response) => {
   try {
     const { status, upcoming } = req.query;
 
@@ -24,7 +18,6 @@ export async function getAllMatches(req: Request, res: Response) {
 
     const matches = await prisma.match.findMany({
       where,
-      orderBy: { date: "asc" },
       include: {
         venue: {
           select: {
@@ -41,6 +34,7 @@ export async function getAllMatches(req: Request, res: Response) {
               select: {
                 id: true,
                 name: true,
+                email: true,
                 position: true,
                 skillLevel: true,
               },
@@ -48,9 +42,12 @@ export async function getAllMatches(req: Request, res: Response) {
           },
         },
         _count: {
-          select: { players: true },
+          select: {
+            players: true,
+          },
         },
       },
+      orderBy: { date: "asc" },
     });
 
     res.json({ matches });
@@ -58,10 +55,10 @@ export async function getAllMatches(req: Request, res: Response) {
     console.error("Get matches error:", error);
     res.status(500).json({ error: "Failed to get matches" });
   }
-}
+};
 
-// Get single match
-export async function getMatch(req: Request, res: Response) {
+// ==================== GET SINGLE MATCH ====================
+export const getMatch = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -81,6 +78,24 @@ export async function getMatch(req: Request, res: Response) {
               },
             },
           },
+          orderBy: { status: "asc" },
+        },
+        events: {
+          include: {
+            player: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+          orderBy: { minute: "asc" },
+        },
+        tournament: {
+          select: {
+            id: true,
+            name: true,
+          },
         },
       },
     });
@@ -89,38 +104,15 @@ export async function getMatch(req: Request, res: Response) {
       return res.status(404).json({ error: "Match not found" });
     }
 
-    let weatherData = null;
-    if (match.venue.latitude && match.venue.longitude) {
-      const weatherResult = await getWeatherForecast(
-        match.venue.latitude,
-        match.venue.longitude,
-        match.date
-      );
-
-      if (weatherResult.success && weatherResult.weather) {
-        weatherData = {
-          ...weatherResult.weather,
-          advice: getWeatherAdvice(weatherResult.weather),
-        };
-      } else if (weatherResult.error) {
-        weatherData = {
-          error: weatherResult.error,
-        };
-      }
-    }
-
-    res.json({
-      match,
-      weather: weatherData,
-    });
+    res.json({ match });
   } catch (error) {
     console.error("Get match error:", error);
     res.status(500).json({ error: "Failed to get match" });
   }
-}
+};
 
-// Get user's matches
-export async function getMyMatches(req: Request, res: Response) {
+// ==================== GET MY MATCHES ====================
+export const getMyMatches = async (req: Request, res: Response) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Not authenticated" });
@@ -128,18 +120,22 @@ export async function getMyMatches(req: Request, res: Response) {
 
     const matches = await prisma.match.findMany({
       where: {
-        players: {
-          some: {
-            userId: req.user.id,
+        OR: [
+          { createdById: req.user.id },
+          {
+            players: {
+              some: {
+                userId: req.user.id,
+              },
+            },
           },
-        },
+        ],
       },
-      orderBy: { date: "asc" },
       include: {
         venue: {
           select: {
+            id: true,
             name: true,
-            address: true,
             city: true,
           },
         },
@@ -153,9 +149,12 @@ export async function getMyMatches(req: Request, res: Response) {
           },
         },
         _count: {
-          select: { players: true },
+          select: {
+            players: true,
+          },
         },
       },
+      orderBy: { date: "asc" },
     });
 
     res.json({ matches });
@@ -163,40 +162,39 @@ export async function getMyMatches(req: Request, res: Response) {
     console.error("Get my matches error:", error);
     res.status(500).json({ error: "Failed to get matches" });
   }
-}
+};
 
-// Create match
-export async function createMatch(req: Request, res: Response) {
+// ==================== CREATE MATCH ====================
+export const createMatch = async (req: Request, res: Response) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Not authenticated" });
     }
 
-    // Validate input
-    const validatedData = matchSchema.parse(req.body);
+    const { date, duration, venueId, notes } = req.body;
 
-    // Check venue exists
+    // Validações
+    if (!date || !venueId) {
+      return res.status(400).json({ error: "Date and venue are required" });
+    }
+
+    // Verifica se venue existe
     const venue = await prisma.venue.findUnique({
-      where: { id: validatedData.venueId },
+      where: { id: venueId },
     });
 
     if (!venue) {
       return res.status(404).json({ error: "Venue not found" });
     }
 
-    // Check date is in the future
-    const matchDate = new Date(validatedData.date);
-    if (matchDate < new Date()) {
-      return res
-        .status(400)
-        .json({ error: "Match date must be in the future" });
-    }
-
-    // Create match and automatically add creator as confirmed player
+    // Cria o jogo e adiciona o criador como jogador confirmado
     const match = await prisma.match.create({
       data: {
-        ...validatedData,
-        date: matchDate,
+        date: new Date(date),
+        duration: duration || 90,
+        venueId,
+        notes,
+        status: "scheduled",
         createdById: req.user.id,
         players: {
           create: {
@@ -213,7 +211,7 @@ export async function createMatch(req: Request, res: Response) {
               select: {
                 id: true,
                 name: true,
-                position: true,
+                email: true,
               },
             },
           },
@@ -226,200 +224,22 @@ export async function createMatch(req: Request, res: Response) {
       match,
     });
   } catch (error) {
-    if (error instanceof Error && "issues" in error) {
-      return res.status(400).json({
-        error: "Validation failed",
-        details: error,
-      });
-    }
-
     console.error("Create match error:", error);
     res.status(500).json({ error: "Failed to create match" });
   }
-}
+};
 
-// Invite player to match
-export async function invitePlayer(req: Request, res: Response) {
-  try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Not authenticated" });
-    }
-
-    const { id } = req.params; // match ID
-    const { userId } = req.body;
-
-    if (!userId) {
-      return res.status(400).json({ error: "User ID is required" });
-    }
-
-    // Check match exists
-    const match = await prisma.match.findUnique({
-      where: { id },
-      include: {
-        venue: true,
-        players: true,
-      },
-    });
-
-    if (!match) {
-      return res.status(404).json({ error: "Match not found" });
-    }
-
-    // Check match is not in the past
-    if (match.date < new Date()) {
-      return res
-        .status(400)
-        .json({ error: "Cannot invite players to past matches" });
-    }
-
-    // Check user exists
-    const userToInvite = await prisma.user.findUnique({
-      where: { id: userId },
-    });
-
-    if (!userToInvite) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    // Check if user is already in match
-    const existingPlayer = match.players.find(
-      (p: { userId: string }) => p.userId === userId
-    );
-    if (existingPlayer) {
-      return res.status(400).json({
-        error: "User is already invited to this match",
-        currentStatus: existingPlayer.status,
-      });
-    }
-
-    // Check venue capacity
-    const confirmedPlayers = match.players.filter(
-      (p: { status: string }) => p.status === "confirmed"
-    ).length;
-    if (confirmedPlayers >= match.venue.capacity) {
-      return res.status(400).json({
-        error: `Match is at full capacity (${match.venue.capacity} players)`,
-      });
-    }
-
-    // Add player to match
-    const matchPlayer = await prisma.matchPlayer.create({
-      data: {
-        matchId: id,
-        userId,
-        status: "pending",
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            position: true,
-          },
-        },
-      },
-    });
-
-    res.status(201).json({
-      message: "Player invited successfully",
-      matchPlayer,
-    });
-  } catch (error) {
-    console.error("Invite player error:", error);
-    res.status(500).json({ error: "Failed to invite player" });
-  }
-}
-
-// RSVP to match (confirm or decline)
-export async function rsvpToMatch(req: Request, res: Response) {
-  try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Not authenticated" });
-    }
-
-    const { id } = req.params; // match ID
-
-    // Validate input
-    const validatedData = rsvpSchema.parse(req.body);
-
-    // Check if user is invited to this match
-    const matchPlayer = await prisma.matchPlayer.findFirst({
-      where: {
-        matchId: id,
-        userId: req.user.id,
-      },
-      include: {
-        match: {
-          include: {
-            venue: true,
-          },
-        },
-      },
-    });
-
-    if (!matchPlayer) {
-      return res
-        .status(404)
-        .json({ error: "You are not invited to this match" });
-    }
-
-    // Check match is not in the past
-    if (matchPlayer.match.date < new Date()) {
-      return res.status(400).json({ error: "Cannot RSVP to past matches" });
-    }
-
-    // If confirming, check venue capacity
-    if (validatedData.status === "confirmed") {
-      const confirmedCount = await prisma.matchPlayer.count({
-        where: {
-          matchId: id,
-          status: "confirmed",
-        },
-      });
-
-      if (confirmedCount >= matchPlayer.match.venue.capacity) {
-        return res.status(400).json({
-          error: `Match is at full capacity (${matchPlayer.match.venue.capacity} players)`,
-        });
-      }
-    }
-
-    // Update RSVP status
-    const updated = await prisma.matchPlayer.update({
-      where: { id: matchPlayer.id },
-      data: { status: validatedData.status },
-    });
-
-    res.json({
-      message: `Successfully ${
-        validatedData.status === "confirmed" ? "confirmed" : "declined"
-      } match invitation`,
-      matchPlayer: updated,
-    });
-  } catch (error) {
-    if (error instanceof Error && "issues" in error) {
-      return res.status(400).json({
-        error: "Validation failed",
-        details: error,
-      });
-    }
-
-    console.error("RSVP error:", error);
-    res.status(500).json({ error: "Failed to update RSVP" });
-  }
-}
-
-// Update match
-export async function updateMatch(req: Request, res: Response) {
+// ==================== UPDATE MATCH ====================
+export const updateMatch = async (req: Request, res: Response) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Not authenticated" });
     }
 
     const { id } = req.params;
+    const { date, duration, venueId, notes, status } = req.body;
 
-    // Check match exists and user is creator
+    // Verifica se o jogo existe e se o user é o criador
     const match = await prisma.match.findUnique({
       where: { id },
     });
@@ -430,33 +250,30 @@ export async function updateMatch(req: Request, res: Response) {
 
     if (match.createdById !== req.user.id) {
       return res.status(403).json({
-        error: "Only the match creator can update the match",
+        error: "Only the match creator can update it",
       });
     }
 
-    // Validate input with the update schema
-    const validatedData = matchUpdateSchema.parse(req.body);
+    // Se mudou o venue, verifica se existe
+    if (venueId && venueId !== match.venueId) {
+      const venue = await prisma.venue.findUnique({
+        where: { id: venueId },
+      });
 
-    // If updating date, ensure it's in the future (unless completing the match)
-    if (validatedData.date && validatedData.status !== "completed") {
-      const newDate = new Date(validatedData.date);
-      if (newDate < new Date()) {
-        return res
-          .status(400)
-          .json({ error: "Match date must be in the future" });
+      if (!venue) {
+        return res.status(404).json({ error: "Venue not found" });
       }
     }
 
-    // Prepare update data
-    const updateData: any = { ...validatedData };
-    if (validatedData.date) {
-      updateData.date = new Date(validatedData.date);
-    }
-
-    // Update match
     const updated = await prisma.match.update({
       where: { id },
-      data: updateData,
+      data: {
+        ...(date && { date: new Date(date) }),
+        ...(duration && { duration }),
+        ...(venueId && { venueId }),
+        ...(notes !== undefined && { notes }),
+        ...(status && { status }),
+      },
       include: {
         venue: true,
         players: {
@@ -477,20 +294,13 @@ export async function updateMatch(req: Request, res: Response) {
       match: updated,
     });
   } catch (error) {
-    if (error instanceof Error && "issues" in error) {
-      return res.status(400).json({
-        error: "Validation failed",
-        details: error,
-      });
-    }
-
     console.error("Update match error:", error);
     res.status(500).json({ error: "Failed to update match" });
   }
-}
+};
 
-// Cancel match
-export async function cancelMatch(req: Request, res: Response) {
+// ==================== DELETE MATCH ====================
+export const deleteMatch = async (req: Request, res: Response) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Not authenticated" });
@@ -498,7 +308,6 @@ export async function cancelMatch(req: Request, res: Response) {
 
     const { id } = req.params;
 
-    // Check match exists and user is creator
     const match = await prisma.match.findUnique({
       where: { id },
     });
@@ -509,26 +318,208 @@ export async function cancelMatch(req: Request, res: Response) {
 
     if (match.createdById !== req.user.id) {
       return res.status(403).json({
-        error: "Only the match creator can cancel the match",
+        error: "Only the match creator can delete it",
       });
     }
 
-    if (match.status === "cancelled") {
-      return res.status(400).json({ error: "Match is already cancelled" });
+    await prisma.match.delete({
+      where: { id },
+    });
+
+    res.json({ message: "Match deleted successfully" });
+  } catch (error) {
+    console.error("Delete match error:", error);
+    res.status(500).json({ error: "Failed to delete match" });
+  }
+};
+
+// ==================== RSVP TO MATCH ====================
+export const rsvpToMatch = async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Not authenticated" });
     }
 
-    // Cancel match
-    const updated = await prisma.match.update({
+    const { id } = req.params;
+    const { status } = req.body; // "confirmed", "declined", "pending"
+
+    if (!["confirmed", "declined", "pending"].includes(status)) {
+      return res.status(400).json({ error: "Invalid status" });
+    }
+
+    // Verifica se o jogo existe
+    const match = await prisma.match.findUnique({
       where: { id },
-      data: { status: "cancelled" },
     });
 
-    res.json({
-      message: "Match cancelled successfully",
-      match: updated,
+    if (!match) {
+      return res.status(404).json({ error: "Match not found" });
+    }
+
+    // Verifica se já está na lista de jogadores
+    const existingPlayer = await prisma.matchPlayer.findFirst({
+      where: {
+        matchId: id,
+        userId: req.user.id,
+      },
+    });
+
+    if (existingPlayer) {
+      // Atualiza o status
+      const updated = await prisma.matchPlayer.update({
+        where: { id: existingPlayer.id },
+        data: { status },
+      });
+
+      return res.json({
+        message: `Successfully ${status === "confirmed" ? "confirmed" : status === "declined" ? "declined" : "updated"} attendance`,
+        player: updated,
+      });
+    } else {
+      // Adiciona como novo jogador
+      const player = await prisma.matchPlayer.create({
+        data: {
+          matchId: id,
+          userId: req.user.id,
+          status,
+        },
+      });
+
+      return res.status(201).json({
+        message: `Successfully ${status === "confirmed" ? "joined" : "responded to"} match`,
+        player,
+      });
+    }
+  } catch (error) {
+    console.error("RSVP to match error:", error);
+    res.status(500).json({ error: "Failed to update attendance" });
+  }
+};
+
+// ==================== LEAVE MATCH ====================
+export const leaveMatch = async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const { id } = req.params;
+
+    const match = await prisma.match.findUnique({
+      where: { id },
+    });
+
+    if (!match) {
+      return res.status(404).json({ error: "Match not found" });
+    }
+
+    // Match creator não pode sair (só pode deletar o jogo)
+    if (match.createdById === req.user.id) {
+      return res.status(400).json({
+        error: "Match creator cannot leave. Delete the match instead.",
+      });
+    }
+
+    const player = await prisma.matchPlayer.findFirst({
+      where: {
+        matchId: id,
+        userId: req.user.id,
+      },
+    });
+
+    if (!player) {
+      return res.status(404).json({
+        error: "You are not in this match",
+      });
+    }
+
+    await prisma.matchPlayer.delete({
+      where: { id: player.id },
+    });
+
+    res.json({ message: "Successfully left the match" });
+  } catch (error) {
+    console.error("Leave match error:", error);
+    res.status(500).json({ error: "Failed to leave match" });
+  }
+};
+
+// ==================== INVITE PLAYER TO MATCH ====================
+export const invitePlayerToMatch = async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const { id } = req.params;
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: "User ID is required" });
+    }
+
+    // Verifica se o jogo existe e se o user é o criador
+    const match = await prisma.match.findUnique({
+      where: { id },
+    });
+
+    if (!match) {
+      return res.status(404).json({ error: "Match not found" });
+    }
+
+    if (match.createdById !== req.user.id) {
+      return res.status(403).json({
+        error: "Only the match creator can invite players",
+      });
+    }
+
+    // Verifica se o user existe
+    const userToInvite = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!userToInvite) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Verifica se já está no jogo
+    const existingPlayer = await prisma.matchPlayer.findFirst({
+      where: {
+        matchId: id,
+        userId,
+      },
+    });
+
+    if (existingPlayer) {
+      return res.status(400).json({
+        error: "User is already in this match",
+      });
+    }
+
+    // Adiciona como pending
+    const player = await prisma.matchPlayer.create({
+      data: {
+        matchId: id,
+        userId,
+        status: "pending",
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    res.status(201).json({
+      message: "Player invited successfully",
+      player,
     });
   } catch (error) {
-    console.error("Cancel match error:", error);
-    res.status(500).json({ error: "Failed to cancel match" });
+    console.error("Invite player error:", error);
+    res.status(500).json({ error: "Failed to invite player" });
   }
-}
+};

@@ -20,9 +20,12 @@ model User {
   teamsManaged     Team[]         @relation("TeamManager")
   teamsSubManaged  Team[]         @relation("TeamSubManager")
   teamMemberships  TeamMember[]
+  sentInvites      TeamInvite[]   @relation("TeamInviteInviter")
   tournaments      Tournament[]
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
+
+  @@map("users")
 }
 
 model Availability {
@@ -127,12 +130,14 @@ model Team {
   subManagerId      String?
   subManager        User?            @relation("TeamSubManager", fields: [subManagerId], references: [id])
   members           TeamMember[]
+  invites           TeamInvite[]
   tournamentTeams   TournamentTeam[]
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
   @@index([managerId])
   @@index([subManagerId])
+  @@map("teams")
 }
 
 model TeamMember {
@@ -200,4 +205,23 @@ model TournamentTeam {
   @@index([tournamentId])
   @@index([teamId])
   @@index([status])
+}
+
+model TeamInvite {
+  id        String   @id @default(uuid())
+  teamId    String   @map("team_id")
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  email     String
+  role      String   // "member" ou "coordinator"
+  status    String   @default("pending") // "pending", "accepted", "declined", "expired"
+  token     String   @unique
+  invitedBy String?  @map("invited_by")
+  inviter   User?    @relation("TeamInviteInviter", fields: [invitedBy], references: [id])
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([token])
+  @@index([email])
+  @@index([teamId])
+  @@map("team_invites")
 }
