@@ -652,3 +652,75 @@ export async function removeMember(req: Request, res: Response) {
     res.status(500).json({ error: "Failed to remove member" });
   }
 }
+
+// Get team matches
+export async function getTeamMatches(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+
+    const matches = await prisma.match.findMany({
+      where: {
+        OR: [{ homeTeamId: id }, { awayTeamId: id }],
+      },
+      include: {
+        venue: true,
+        tournament: true,
+        homeTeam: { select: { id: true, name: true, logo: true } },
+        awayTeam: { select: { id: true, name: true, logo: true } },
+      },
+      orderBy: { date: "desc" },
+    });
+
+    res.json({ matches });
+  } catch (error) {
+    console.error("Get team matches error:", error);
+    res.status(500).json({ error: "Failed to get team matches" });
+  }
+}
+
+// Get team stats
+export async function getTeamStats(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+
+    const matches = await prisma.match.findMany({
+      where: {
+        OR: [{ homeTeamId: id }, { awayTeamId: id }],
+        status: "completed",
+      },
+    });
+
+    let stats = {
+      matchesPlayed: matches.length,
+      wins: 0,
+      draws: 0,
+      losses: 0,
+      goalsFor: 0,
+      goalsAgainst: 0,
+    };
+
+    matches.forEach((match) => {
+      const isHome = match.homeTeamId === id;
+      const teamScore = isHome ? match.homeScore : match.awayScore;
+      const opponentScore = isHome ? match.awayScore : match.homeScore;
+
+      if (teamScore !== null && teamScore !== undefined && opponentScore !== null && opponentScore !== undefined) {
+        stats.goalsFor += teamScore;
+        stats.goalsAgainst += opponentScore;
+
+        if (teamScore > opponentScore) {
+          stats.wins++;
+        } else if (teamScore < opponentScore) {
+          stats.losses++;
+        } else {
+          stats.draws++;
+        }
+      }
+    });
+
+    res.json({ stats });
+  } catch (error) {
+    console.error("Get team stats error:", error);
+    res.status(500).json({ error: "Failed to get team stats" });
+  }
+}

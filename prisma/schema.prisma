@@ -73,10 +73,12 @@ model Match {
   tournament   Tournament?   @relation(fields: [tournamentId], references: [id])  // ← ADD THIS
   
   // Tournament match specific fields
-  homeTeamId   String?                                                    // ← ADD THIS
-  awayTeamId   String?                                                    // ← ADD THIS
-  homeScore    Int?                                                       // ← ADD THIS
-  awayScore    Int?                                                       // ← ADD THIS
+  homeTeamId   String?
+  homeTeam     Team?         @relation("HomeMatches", fields: [homeTeamId], references: [id])
+  awayTeamId   String?
+  awayTeam     Team?         @relation("AwayMatches", fields: [awayTeamId], references: [id])
+  homeScore    Int?
+  awayScore    Int?
   
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
@@ -132,6 +134,8 @@ model Team {
   members           TeamMember[]
   invites           TeamInvite[]
   tournamentTeams   TournamentTeam[]
+  homeMatches       Match[]          @relation("HomeMatches")
+  awayMatches       Match[]          @relation("AwayMatches")
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
