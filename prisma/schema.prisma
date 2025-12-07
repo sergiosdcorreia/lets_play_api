@@ -8,22 +8,23 @@ datasource db {
 }
 
 model User {
-  id               String         @id @default(cuid())
-  email            String         @unique
-  password         String
-  name             String
-  position         String?
-  skillLevel       Int            @default(5)
-  availability     Availability[]
-  matchPlayers     MatchPlayer[]
-  matchEvents      MatchEvent[]
-  teamsManaged     Team[]         @relation("TeamManager")
-  teamsSubManaged  Team[]         @relation("TeamSubManager")
-  teamMemberships  TeamMember[]
-  sentInvites      TeamInvite[]   @relation("TeamInviteInviter")
-  tournaments      Tournament[]
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  id              String         @id @default(cuid())
+  email           String         @unique
+  password        String
+  name            String
+  position        String?
+  skillLevel      Int            @default(5)
+  availability    Availability[]
+  matchPlayers    MatchPlayer[]
+  matchEvents     MatchEvent[]
+  teamsManaged    Team[]         @relation("TeamManager")
+  teamsSubManaged Team[]         @relation("TeamSubManager")
+  teamMemberships TeamMember[]
+  sentInvites     TeamInvite[]   @relation("TeamInviteInviter")
+  tournaments     Tournament[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  Notification    Notification[]
 
   @@map("users")
 }
@@ -69,23 +70,23 @@ model Match {
   players      MatchPlayer[]
   events       MatchEvent[]
   createdById  String
-  tournamentId String?                                                    // ← ADD THIS
-  tournament   Tournament?   @relation(fields: [tournamentId], references: [id])  // ← ADD THIS
-  
+  tournamentId String? // ← ADD THIS
+  tournament   Tournament?   @relation(fields: [tournamentId], references: [id]) // ← ADD THIS
+
   // Tournament match specific fields
-  homeTeamId   String?
-  homeTeam     Team?         @relation("HomeMatches", fields: [homeTeamId], references: [id])
-  awayTeamId   String?
-  awayTeam     Team?         @relation("AwayMatches", fields: [awayTeamId], references: [id])
-  homeScore    Int?
-  awayScore    Int?
-  
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  homeTeamId String?
+  homeTeam   Team?   @relation("HomeMatches", fields: [homeTeamId], references: [id])
+  awayTeamId String?
+  awayTeam   Team?   @relation("AwayMatches", fields: [awayTeamId], references: [id])
+  homeScore  Int?
+  awayScore  Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([venueId])
   @@index([date])
-  @@index([tournamentId])                                                 // ← ADD THIS
+  @@index([tournamentId]) // ← ADD THIS
 }
 
 model MatchPlayer {
@@ -121,23 +122,23 @@ model MatchEvent {
 }
 
 model Team {
-  id                String           @id @default(cuid())
-  name              String
-  logo              String?
-  primaryColor      String?
-  secondaryColor    String?
-  description       String?
-  managerId         String
-  manager           User             @relation("TeamManager", fields: [managerId], references: [id])
-  subManagerId      String?
-  subManager        User?            @relation("TeamSubManager", fields: [subManagerId], references: [id])
-  members           TeamMember[]
-  invites           TeamInvite[]
-  tournamentTeams   TournamentTeam[]
-  homeMatches       Match[]          @relation("HomeMatches")
-  awayMatches       Match[]          @relation("AwayMatches")
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  id              String           @id @default(cuid())
+  name            String
+  logo            String?
+  primaryColor    String?
+  secondaryColor  String?
+  description     String?
+  managerId       String
+  manager         User             @relation("TeamManager", fields: [managerId], references: [id])
+  subManagerId    String?
+  subManager      User?            @relation("TeamSubManager", fields: [subManagerId], references: [id])
+  members         TeamMember[]
+  invites         TeamInvite[]
+  tournamentTeams TournamentTeam[]
+  homeMatches     Match[]          @relation("HomeMatches")
+  awayMatches     Match[]          @relation("AwayMatches")
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   @@index([managerId])
   @@index([subManagerId])
@@ -190,20 +191,20 @@ model TournamentTeam {
   teamId       String
   team         Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
   status       String     @default("invited") // "invited", "confirmed", "declined"
-  
+
   // Tournament statistics
-  matchesPlayed Int       @default(0)
-  wins          Int       @default(0)
-  draws         Int       @default(0)
-  losses        Int       @default(0)
-  goalsFor      Int       @default(0)
-  goalsAgainst  Int       @default(0)
-  goalDifference Int      @default(0)
-  points        Int       @default(0)
-  
-  joinedAt      DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  matchesPlayed  Int @default(0)
+  wins           Int @default(0)
+  draws          Int @default(0)
+  losses         Int @default(0)
+  goalsFor       Int @default(0)
+  goalsAgainst   Int @default(0)
+  goalDifference Int @default(0)
+  points         Int @default(0)
+
+  joinedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   @@unique([tournamentId, teamId]) // Team can't be in same tournament twice
   @@index([tournamentId])
@@ -216,7 +217,7 @@ model TeamInvite {
   teamId    String   @map("team_id")
   team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
   email     String
-  role      String   // "member" ou "coordinator"
+  role      String // "member" ou "coordinator"
   status    String   @default("pending") // "pending", "accepted", "declined", "expired"
   token     String   @unique
   invitedBy String?  @map("invited_by")
@@ -228,4 +229,18 @@ model TeamInvite {
   @@index([email])
   @@index([teamId])
   @@map("team_invites")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  message   String
+  isRead    Boolean  @default(false)
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("notifications")
 }

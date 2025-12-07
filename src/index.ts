@@ -11,6 +11,7 @@ import statisticsRoutes from "./routes/statisticsRoutes";
 import teamRoutes from "./routes/teamRoutes";
 import tournamentRoutes from "./routes/tournamentRoutes";
 import inviteRoutes from "./routes/inviteRoutes";
+import notificationRoutes from "./routes/notification.routes";
 
 dotenv.config();
 
@@ -35,6 +36,7 @@ app.use("/api/statistics", statisticsRoutes);
 app.use("/api/teams", teamRoutes);
 app.use("/api/invites", inviteRoutes);
 app.use("/api/tournaments", tournamentRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 // Health check with database
 app.get("/api/health", async (req, res) => {
